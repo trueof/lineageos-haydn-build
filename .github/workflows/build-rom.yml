@@ -1,4 +1,4 @@
-name: Build LineageOS 22.2 for haydn
+name: Build haydn kernel with DroidSpaces support
 
 on:
   workflow_dispatch:
@@ -6,82 +6,75 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     steps:
       - name: Free disk space
         run: |
-          echo "=== Before cleanup ==="
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
-          echo "=== After cleanup ==="
           df -h
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev make libncurses-dev \
-            libelf-dev python3 python3-pip git-lfs lz4 xz-utils pngcrush \
-            schedtool squashfs-tools imagemagick lib32readline-dev lib32z1-dev \
-            libxml2-utils xsltproc zip zlib1g-dev
+          sudo apt-get install -y bc bison flex libssl-dev make libncurses-dev libelf-dev python3
 
-      - name: Install repo tool
+      - name: Clone kernel source
         run: |
-          mkdir -p ~/bin
-          curl -sL https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
+          git clone --depth=1 -b lineage-22.2 https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git kernel
 
-      - name: Initialize LineageOS source
+      - name: Clone AOSP build system
         run: |
-          mkdir -p ~/android/lineage
-          cd ~/android/lineage
-          repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
-          echo "=== Disk space after init ==="
-          df -h
+          cd kernel
+          git clone --depth=1 https://android.googlesource.com/kernel/build build
 
-      - name: Sync source
+      - name: Download clang r536225
         run: |
-          cd ~/android/lineage
-          repo sync -c -j$(nproc) --no-tags --no-clone-bundle
-          echo "=== Disk space after sync ==="
-          df -h
+          mkdir -p toolchain
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C toolchain/
+          ls toolchain/bin/clang
 
-      - name: Setup build environment
+      - name: Download GCC toolchains
         run: |
-          cd ~/android/lineage
-          source build/envsetup.sh
-          breakfast haydn
-          echo "=== Device configured ==="
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain/gcc-aarch64
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain/gcc-arm
 
-      - name: Extract proprietary blobs
+      - name: Generate defconfig
         run: |
-          cd ~/android/lineage
-          # Use the device's installed blobs
-          # This step requires a device connected via adb
-          # For CI, we'll use the extracted blobs from the device tree
-          echo "Using pre-extracted blobs from device tree"
+          cd kernel
+          export PATH="$PWD/../toolchain/bin:$PWD/../toolchain/gcc-aarch64/bin:$PWD/../toolchain/gcc-arm/bin:$PATH"
+          scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
 
-      - name: Build ROM
+      - name: Add DroidSpaces configs
         run: |
-          cd ~/android/lineage
-          source build/envsetup.sh
-          brunch haydn
-          echo "=== Build completed ==="
-          ls -lh out/target/product/haydn/*.zip 2>/dev/null || echo "No zip found"
-          ls -lh out/target/product/haydn/boot.img 2>/dev/null || echo "No boot.img found"
+          cd kernel
+          sed -i 's/# CONFIG_PID_NS is not set/CONFIG_PID_NS=y/' out/.config
+          sed -i 's/# CONFIG_IPC_NS is not set/CONFIG_IPC_NS=y/' out/.config
+          sed -i 's/# CONFIG_SYSVIPC is not set/CONFIG_SYSVIPC=y/' out/.config
+          sed -i 's/# CONFIG_POSIX_MQUEUE is not set/CONFIG_POSIX_MQUEUE=y/' out/.config
+          sed -i 's/# CONFIG_DEVTMPFS is not set/CONFIG_DEVTMPFS=y/' out/.config
+          sed -i 's/# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set/CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y/' out/.config
 
-      - name: Upload boot.img
+      - name: Apply kABI patches
+        run: |
+          cd kernel
+          # Patch sched.h for SYSVIPC kABI
+          sed -i 's/\tstruct sysv_sem\t\t\tsysvsem;/\t\/\/ struct sysv_sem\t\t\tsysvsem;/' include/linux/sched.h
+          sed -i 's/\tstruct sysv_shm\t\t\tsysvshm;/\t\/\/ struct sysv_shm\t\t\tsysvshm;/' include/linux/sched.h
+          sed -i 's/\tANDROID_KABI_RESERVE(6);/\n#ifdef CONFIG_SYSVIPC\n\tANDROID_KABI_USE(6, struct sysv_sem sysvsem);\n\t_ANDROID_KABI_REPLACE(ANDROID_KABI_RESERVE(7); ANDROID_KABI_RESERVE(8), struct sysv_shm sysvshm);\n#else\n\tANDROID_KABI_RESERVE(6);\n\tANDROID_KABI_RESERVE(7);\n\tANDROID_KABI_RESERVE(8);\n#endif/' include/linux/sched.h
+          # Patch user.h for POSIX_MQUEUE kABI
+          sed -i 's/\tunsigned long mq_bytes;/\t\/\/unsigned long mq_bytes;/' include/linux/sched/user.h
+          sed -i 's/\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};/\n#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#endif\n};/' include/linux/sched/user.h
+
+      - name: Build kernel
+        run: |
+          cd kernel
+          export PATH="$PWD/../toolchain/bin:$PWD/../toolchain/gcc-aarch64/bin:$PWD/../toolchain/gcc-arm/bin:$PATH"
+          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 KCFLAGS="-Wno-error" Image
+
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: lineageos-haydn-boot
-          path: out/target/product/haydn/boot.img
-          retention-days: 30
-
-      - name: Upload ROM zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: lineageos-haydn-rom
-          path: out/target/product/haydn/lineage-*.zip
-          retention-days: 30
+          name: kernel-image
+          path: kernel/out/arch/arm64/boot/Image
