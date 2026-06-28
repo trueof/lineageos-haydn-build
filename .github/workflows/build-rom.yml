@@ -44,7 +44,9 @@ jobs:
         run: |
           cd kernel
           export PATH="$PWD/../toolchain/bin:$PWD/../toolchain/gcc-aarch64/bin:$PWD/../toolchain/gcc-arm/bin:$PATH"
+          mkdir -p out
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
+          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
 
       - name: Add DroidSpaces configs
         run: |
