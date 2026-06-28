@@ -31,13 +31,29 @@ jobs:
       - name: Download clang r536225
         run: |
           mkdir -p toolchain
-          # Try LineageOS prebuilt clang
-          git clone --depth=1 -b lineage-22.2 https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225 || \
-          git clone --depth=1 https://gitlab.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225
-          # Move contents to toolchain root
-          if [ -d toolchain/clang-r536225/bin ]; then
-            cp -r toolchain/clang-r536225/* toolchain/ 2>/dev/null || true
+          # Use Microsoft AOSP mirror for clang
+          git clone --depth=1 https://github.com/msft-mirror-aosp/platform.prebuilts.clang.host.linux-x86.git clang-repo
+          # Find and extract clang-r536225
+          if [ -d "clang-repo/clang-r536225" ]; then
+            cp -r clang-repo/clang-r536225/* toolchain/
+          elif [ -d "clang-repo/clang-r536225" ]; then
+            cp -r clang-repo/clang-r536225/* toolchain/
+          else
+            # List available versions
+            ls clang-repo/ | head -20
+            # Try to find the right version
+            for dir in clang-repo/clang-*; do
+              if [ -d "$dir/bin" ] && [ -f "$dir/bin/clang" ]; then
+                version=$($dir/bin/clang --version 2>/dev/null | head -1)
+                if echo "$version" | grep -q "19.0.1"; then
+                  cp -r "$dir"/* toolchain/
+                  echo "Found clang 19.0.1 at $dir"
+                  break
+                fi
+              fi
+            done
           fi
+          rm -rf clang-repo
           ls toolchain/bin/clang && toolchain/bin/clang --version | head -1
 
       - name: Download GCC toolchains
