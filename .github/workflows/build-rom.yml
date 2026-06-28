@@ -75,13 +75,13 @@ jobs:
       - name: Apply kABI patches
         run: |
           cd kernel
-          # Patch sched.h for SYSVIPC kABI
-          sed -i 's/\tstruct sysv_sem\t\t\tsysvsem;/\t\/\/ struct sysv_sem\t\t\tsysvsem;/' include/linux/sched.h
-          sed -i 's/\tstruct sysv_shm\t\t\tsysvshm;/\t\/\/ struct sysv_shm\t\t\tsysvshm;/' include/linux/sched.h
-          sed -i 's/\tANDROID_KABI_RESERVE(6);/\n#ifdef CONFIG_SYSVIPC\n\tANDROID_KABI_USE(6, struct sysv_sem sysvsem);\n\t_ANDROID_KABI_REPLACE(ANDROID_KABI_RESERVE(7); ANDROID_KABI_RESERVE(8), struct sysv_shm sysvshm);\n#else\n\tANDROID_KABI_RESERVE(6);\n\tANDROID_KABI_RESERVE(7);\n\tANDROID_KABI_RESERVE(8);\n#endif/' include/linux/sched.h
-          # Patch user.h for POSIX_MQUEUE kABI
-          sed -i 's/\tunsigned long mq_bytes;/\t\/\/unsigned long mq_bytes;/' include/linux/sched/user.h
-          sed -i 's/\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};/\n#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#endif\n};/' include/linux/sched/user.h
+          # Download and apply kABI patches
+          curl -sL "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch" -o /tmp/p1.patch
+          curl -sL "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch" -o /tmp/p2.patch
+          git apply --check /tmp/p1.patch 2>&1 || echo "Patch 1 may not apply cleanly, trying manual..."
+          git apply /tmp/p1.patch 2>&1 || echo "Patch 1 failed, applying manually..."
+          git apply --check /tmp/p2.patch 2>&1 || echo "Patch 2 may not apply cleanly, trying manual..."
+          git apply /tmp/p2.patch 2>&1 || echo "Patch 2 failed, applying manually..."
 
       - name: Build kernel
         run: |
