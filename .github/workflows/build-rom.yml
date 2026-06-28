@@ -1,0 +1,87 @@
+name: Build LineageOS 22.2 for haydn
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: |
+          echo "=== Before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          echo "=== After cleanup ==="
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev make libncurses-dev \
+            libelf-dev python3 python3-pip git-lfs lz4 xz-utils pngcrush \
+            schedtool squashfs-tools imagemagick lib32readline-dev lib32z1-dev \
+            libxml2-utils xsltproc zip zlib1g-dev
+
+      - name: Install repo tool
+        run: |
+          mkdir -p ~/bin
+          curl -sL https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Initialize LineageOS source
+        run: |
+          mkdir -p ~/android/lineage
+          cd ~/android/lineage
+          repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
+          echo "=== Disk space after init ==="
+          df -h
+
+      - name: Sync source
+        run: |
+          cd ~/android/lineage
+          repo sync -c -j$(nproc) --depth=1 --no-tags --no-clone-bundle
+          echo "=== Disk space after sync ==="
+          df -h
+
+      - name: Setup build environment
+        run: |
+          cd ~/android/lineage
+          source build/envsetup.sh
+          breakfast haydn
+          echo "=== Device configured ==="
+
+      - name: Extract proprietary blobs
+        run: |
+          cd ~/android/lineage
+          # Use the device's installed blobs
+          # This step requires a device connected via adb
+          # For CI, we'll use the extracted blobs from the device tree
+          echo "Using pre-extracted blobs from device tree"
+
+      - name: Build ROM
+        run: |
+          cd ~/android/lineage
+          source build/envsetup.sh
+          brunch haydn
+          echo "=== Build completed ==="
+          ls -lh out/target/product/haydn/*.zip 2>/dev/null || echo "No zip found"
+          ls -lh out/target/product/haydn/boot.img 2>/dev/null || echo "No boot.img found"
+
+      - name: Upload boot.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineageos-haydn-boot
+          path: out/target/product/haydn/boot.img
+          retention-days: 30
+
+      - name: Upload ROM zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineageos-haydn-rom
+          path: out/target/product/haydn/lineage-*.zip
+          retention-days: 30
