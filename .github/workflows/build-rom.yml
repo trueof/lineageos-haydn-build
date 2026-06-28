@@ -40,6 +40,20 @@ jobs:
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain/gcc-aarch64
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain/gcc-arm
 
+      - name: Create compiler symlinks
+        run: |
+          for t in gcc ar ld nm objcopy strip ranlib; do
+            if [ -f toolchain/gcc-aarch64/bin/aarch64-linux-android-$t ]; then
+              ln -sf aarch64-linux-android-$t toolchain/gcc-aarch64/bin/aarch64-linux-gnu-$t
+            fi
+          done
+          for t in gcc ar ld nm objcopy strip ranlib; do
+            if [ -f toolchain/gcc-arm/bin/arm-linux-androideabi-$t ]; then
+              ln -sf arm-linux-androideabi-$t toolchain/gcc-arm/bin/arm-linux-gnueabi-$t
+            fi
+          done
+          toolchain/gcc-aarch64/bin/aarch64-linux-gnu-gcc --version | head -1
+
       - name: Generate defconfig
         run: |
           cd kernel
