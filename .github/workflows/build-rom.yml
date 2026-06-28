@@ -62,15 +62,24 @@ jobs:
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
           make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
 
-      - name: Add DroidSpaces configs
+      - name: Add DroidSpaces configs and fix linker issues
         run: |
           cd kernel
+          # Add DroidSpaces configs
           sed -i 's/# CONFIG_PID_NS is not set/CONFIG_PID_NS=y/' out/.config
           sed -i 's/# CONFIG_IPC_NS is not set/CONFIG_IPC_NS=y/' out/.config
           sed -i 's/# CONFIG_SYSVIPC is not set/CONFIG_SYSVIPC=y/' out/.config
           sed -i 's/# CONFIG_POSIX_MQUEUE is not set/CONFIG_POSIX_MQUEUE=y/' out/.config
           sed -i 's/# CONFIG_DEVTMPFS is not set/CONFIG_DEVTMPFS=y/' out/.config
           sed -i 's/# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set/CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y/' out/.config
+          # Disable proprietary drivers that cause linker errors
+          sed -i 's/CONFIG_CNSS2=y/# CONFIG_CNSS2 is not set/' out/.config
+          sed -i 's/CONFIG_ICNSS2=y/# CONFIG_ICNSS2 is not set/' out/.config
+          sed -i 's/CONFIG_QTI_BATTERY_CHARGER=y/# CONFIG_QTI_BATTERY_CHARGER is not set/' out/.config
+          sed -i 's/CONFIG_BACKLIGHT_QCOM_SPMI_WLED=y/# CONFIG_BACKLIGHT_QCOM_SPMI_WLED is not set/' out/.config
+          sed -i 's/CONFIG_LEDS_QTI_FLASH=y/# CONFIG_LEDS_QTI_FLASH is not set/' out/.config
+          sed -i 's/CONFIG_MI_HARDWARE_ID=m/# CONFIG_MI_HARDWARE_ID is not set/' out/.config
+          sed -i 's/CONFIG_MI_DISP=y/# CONFIG_MI_DISP is not set/' out/.config
 
       - name: Apply kABI patches
         run: |
