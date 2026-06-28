@@ -31,10 +31,14 @@ jobs:
       - name: Download clang r536225
         run: |
           mkdir -p toolchain
-          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225 || \
-          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225
-          mv toolchain/clang-r536225/* toolchain/ 2>/dev/null || true
-          ls toolchain/bin/clang
+          # Try LineageOS prebuilt clang
+          git clone --depth=1 -b lineage-22.2 https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225 || \
+          git clone --depth=1 https://gitlab.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225
+          # Move contents to toolchain root
+          if [ -d toolchain/clang-r536225/bin ]; then
+            cp -r toolchain/clang-r536225/* toolchain/ 2>/dev/null || true
+          fi
+          ls toolchain/bin/clang && toolchain/bin/clang --version | head -1
 
       - name: Download GCC toolchains
         run: |
