@@ -31,13 +31,16 @@ jobs:
       - name: Download clang r536225
         run: |
           mkdir -p toolchain
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz" -o clang.tar.gz
-          tar -xzf clang.tar.gz -C toolchain/
+          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225 || \
+          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_clang_host_linux-x86_clang-r536225.git toolchain/clang-r536225
+          mv toolchain/clang-r536225/* toolchain/ 2>/dev/null || true
           ls toolchain/bin/clang
 
       - name: Download GCC toolchains
         run: |
+          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain/gcc-aarch64 || \
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain/gcc-aarch64
+          git clone --depth=1 https://github.com/nicofontana/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git toolchain/gcc-arm || \
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain/gcc-arm
 
       - name: Create compiler symlinks
