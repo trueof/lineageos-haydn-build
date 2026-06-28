@@ -44,7 +44,7 @@ jobs:
       - name: Sync source
         run: |
           cd ~/android/lineage
-          repo sync -c -j$(nproc) --depth=1 --no-tags --no-clone-bundle
+          repo sync -c -j$(nproc) --no-tags --no-clone-bundle
           echo "=== Disk space after sync ==="
           df -h
 
