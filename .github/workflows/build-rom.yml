@@ -75,6 +75,52 @@ jobs:
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
           make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-android- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
 
+      - name: Apply kABI patches manually
+        run: |
+          cd kernel
+          # Patch 1: sched.h - move sysvsem/sysvshm to ABI reserved slots
+          sed -i 's/\tstruct sysv_sem\t\t\tsysvsem;/\t\/\/ struct sysv_sem\t\t\tsysvsem;/' include/linux/sched.h
+          sed -i 's/\tstruct sysv_shm\t\t\tsysvshm;/\t\/\/ struct sysv_shm\t\t\tsysvshm;/' include/linux/sched.h
+          python3 -c "
+          with open('include/linux/sched.h', 'r') as f:
+              content = f.read()
+          old = '\tANDROID_KABI_RESERVE(6);\n\tANDROID_KABI_RESERVE(7);\n\tANDROID_KABI_RESERVE(8);'
+          new = '''#ifdef CONFIG_SYSVIPC
+\tANDROID_KABI_USE(6, struct sysv_sem sysvsem);
+\t_ANDROID_KABI_REPLACE(ANDROID_KABI_RESERVE(7); ANDROID_KABI_RESERVE(8), struct sysv_shm sysvshm);
+#else
+\tANDROID_KABI_RESERVE(6);
+\tANDROID_KABI_RESERVE(7);
+\tANDROID_KABI_RESERVE(8);
+#endif'''
+          content = content.replace(old, new)
+          with open('include/linux/sched.h', 'w') as f:
+              f.write(content)
+          "
+          # Patch 2: user.h - move mq_bytes to ABI reserved slot
+          sed -i 's/\tunsigned long mq_bytes;/\t\/\/unsigned long mq_bytes;/' include/linux/sched/user.h
+          python3 -c "
+          with open('include/linux/sched/user.h', 'r') as f:
+              content = f.read()
+          old = '\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};'
+          new = '''#if defined(CONFIG_POSIX_MQUEUE)
+\tANDROID_KABI_USE(1, unsigned long mq_bytes);
+\tANDROID_KABI_RESERVE(2);
+\tANDROID_OEM_DATA_ARRAY(1, 2);
+#else
+\tANDROID_KABI_RESERVE(1);
+\tANDROID_KABI_RESERVE(2);
+\tANDROID_OEM_DATA_ARRAY(1, 2);
+#endif
+};'''
+          content = content.replace(old, new)
+          with open('include/linux/sched/user.h', 'w') as f:
+              f.write(content)
+          "
+          echo "=== Verify patches ==="
+          grep -n "ANDROID_KABI_USE(6" include/linux/sched.h
+          grep -n "ANDROID_KABI_USE(1" include/linux/sched/user.h
+
       - name: Add DroidSpaces configs and disable problematic drivers
         run: |
           cd kernel
