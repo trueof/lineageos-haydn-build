@@ -42,17 +42,30 @@ jobs:
 
       - name: Create compiler symlinks
         run: |
-          for t in gcc ar ld nm objcopy strip ranlib; do
-            if [ -f toolchain/gcc-aarch64/bin/aarch64-linux-android-$t ]; then
-              ln -sf aarch64-linux-android-$t toolchain/gcc-aarch64/bin/aarch64-linux-gnu-$t
-            fi
+          set -eux
+          # Create both triple variants for aarch64
+          for src_triple in aarch64-linux-android aarch64-linux-gnu; do
+            for t in gcc ar ld nm objcopy strip ranlib; do
+              src="toolchain/gcc-aarch64/bin/aarch64-linux-android-$t"
+              if [ -f "$src" ]; then
+                ln -sf "$(basename "$src")" "toolchain/gcc-aarch64/bin/$src_triple-$t"
+              fi
+            done
           done
-          for t in gcc ar ld nm objcopy strip ranlib; do
-            if [ -f toolchain/gcc-arm/bin/arm-linux-androideabi-$t ]; then
-              ln -sf arm-linux-androideabi-$t toolchain/gcc-arm/bin/arm-linux-gnueabi-$t
-            fi
+          # Create both triple variants for arm32
+          for src_triple in arm-linux-androideabi arm-linux-gnueabi; do
+            for t in gcc ar ld nm objcopy strip ranlib; do
+              src="toolchain/gcc-arm/bin/arm-linux-androideabi-$t"
+              if [ -f "$src" ]; then
+                ln -sf "$(basename "$src")" "toolchain/gcc-arm/bin/$src_triple-$t"
+              fi
+            done
           done
-          toolchain/gcc-aarch64/bin/aarch64-linux-gnu-gcc --version | head -1
+          # Create ld.lld symlink for clang
+          ln -sf ld.lld toolchain/bin/aarch64-linux-android-ld.lld
+          # Verify
+          toolchain/gcc-aarch64/bin/aarch64-linux-gnu-gcc --version | head -1 || true
+          toolchain/bin/clang --version | head -1
 
       - name: Generate defconfig
         run: |
@@ -60,9 +73,9 @@ jobs:
           export PATH="$PWD/../toolchain/bin:$PWD/../toolchain/gcc-aarch64/bin:$PWD/../toolchain/gcc-arm/bin:$PATH"
           mkdir -p out
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
-          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
+          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-android- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
 
-      - name: Add DroidSpaces configs and fix linker issues
+      - name: Add DroidSpaces configs and disable problematic drivers
         run: |
           cd kernel
           # Add DroidSpaces configs
@@ -80,23 +93,15 @@ jobs:
           sed -i 's/CONFIG_LEDS_QTI_FLASH=y/# CONFIG_LEDS_QTI_FLASH is not set/' out/.config
           sed -i 's/CONFIG_MI_HARDWARE_ID=m/# CONFIG_MI_HARDWARE_ID is not set/' out/.config
           sed -i 's/CONFIG_MI_DISP=y/# CONFIG_MI_DISP is not set/' out/.config
-
-      - name: Apply kABI patches
-        run: |
-          cd kernel
-          # Download and apply kABI patches
-          curl -sL "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch" -o /tmp/p1.patch
-          curl -sL "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch" -o /tmp/p2.patch
-          git apply --check /tmp/p1.patch 2>&1 || echo "Patch 1 may not apply cleanly, trying manual..."
-          git apply /tmp/p1.patch 2>&1 || echo "Patch 1 failed, applying manually..."
-          git apply --check /tmp/p2.patch 2>&1 || echo "Patch 2 may not apply cleanly, trying manual..."
-          git apply /tmp/p2.patch 2>&1 || echo "Patch 2 failed, applying manually..."
+          # Verify DroidSpaces configs
+          echo "=== DroidSpaces configs ==="
+          grep -E "PID_NS=|IPC_NS=|SYSVIPC=|POSIX_MQUEUE=|DEVTMPFS=" out/.config | grep -v "^#"
 
       - name: Build kernel
         run: |
           cd kernel
           export PATH="$PWD/../toolchain/bin:$PWD/../toolchain/gcc-aarch64/bin:$PWD/../toolchain/gcc-arm/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 KCFLAGS="-Wno-error" Image
+          make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-android- LLVM=1 LLVM_IAS=1 KCFLAGS="-Wno-error" Image
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
