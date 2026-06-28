@@ -43,7 +43,6 @@ jobs:
       - name: Create compiler symlinks
         run: |
           set -eux
-          # Create both triple variants for aarch64
           for src_triple in aarch64-linux-android aarch64-linux-gnu; do
             for t in gcc ar ld nm objcopy strip ranlib; do
               src="toolchain/gcc-aarch64/bin/aarch64-linux-android-$t"
@@ -52,7 +51,6 @@ jobs:
               fi
             done
           done
-          # Create both triple variants for arm32
           for src_triple in arm-linux-androideabi arm-linux-gnueabi; do
             for t in gcc ar ld nm objcopy strip ranlib; do
               src="toolchain/gcc-arm/bin/arm-linux-androideabi-$t"
@@ -61,9 +59,7 @@ jobs:
               fi
             done
           done
-          # Create ld.lld symlink for clang
           ln -sf ld.lld toolchain/bin/aarch64-linux-android-ld.lld
-          # Verify
           toolchain/gcc-aarch64/bin/aarch64-linux-gnu-gcc --version | head -1 || true
           toolchain/bin/clang --version | head -1
 
@@ -75,63 +71,20 @@ jobs:
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
           make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-android- LLVM=1 LLVM_IAS=1 vendor/lahaina-qgki_defconfig
 
-      - name: Apply kABI patches manually
+      - name: Apply kABI patches
         run: |
           cd kernel
-          # Patch 1: sched.h - move sysvsem/sysvshm to ABI reserved slots
-          sed -i 's/\tstruct sysv_sem\t\t\tsysvsem;/\t\/\/ struct sysv_sem\t\t\tsysvsem;/' include/linux/sched.h
-          sed -i 's/\tstruct sysv_shm\t\t\tsysvshm;/\t\/\/ struct sysv_shm\t\t\tsysvshm;/' include/linux/sched.h
-          python3 -c "
-          with open('include/linux/sched.h', 'r') as f:
-              content = f.read()
-          old = '\tANDROID_KABI_RESERVE(6);\n\tANDROID_KABI_RESERVE(7);\n\tANDROID_KABI_RESERVE(8);'
-          new = '''#ifdef CONFIG_SYSVIPC
-\tANDROID_KABI_USE(6, struct sysv_sem sysvsem);
-\t_ANDROID_KABI_REPLACE(ANDROID_KABI_RESERVE(7); ANDROID_KABI_RESERVE(8), struct sysv_shm sysvshm);
-#else
-\tANDROID_KABI_RESERVE(6);
-\tANDROID_KABI_RESERVE(7);
-\tANDROID_KABI_RESERVE(8);
-#endif'''
-          content = content.replace(old, new)
-          with open('include/linux/sched.h', 'w') as f:
-              f.write(content)
-          "
-          # Patch 2: user.h - move mq_bytes to ABI reserved slot
-          sed -i 's/\tunsigned long mq_bytes;/\t\/\/unsigned long mq_bytes;/' include/linux/sched/user.h
-          python3 -c "
-          with open('include/linux/sched/user.h', 'r') as f:
-              content = f.read()
-          old = '\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};'
-          new = '''#if defined(CONFIG_POSIX_MQUEUE)
-\tANDROID_KABI_USE(1, unsigned long mq_bytes);
-\tANDROID_KABI_RESERVE(2);
-\tANDROID_OEM_DATA_ARRAY(1, 2);
-#else
-\tANDROID_KABI_RESERVE(1);
-\tANDROID_KABI_RESERVE(2);
-\tANDROID_OEM_DATA_ARRAY(1, 2);
-#endif
-};'''
-          content = content.replace(old, new)
-          with open('include/linux/sched/user.h', 'w') as f:
-              f.write(content)
-          "
-          echo "=== Verify patches ==="
-          grep -n "ANDROID_KABI_USE(6" include/linux/sched.h
-          grep -n "ANDROID_KABI_USE(1" include/linux/sched/user.h
+          python3 /home/runner/work/lineageos-haydn-build/lineageos-haydn-build/apply_patches.py
 
-      - name: Add DroidSpaces configs and disable problematic drivers
+      - name: Add DroidSpaces configs
         run: |
           cd kernel
-          # Add DroidSpaces configs
           sed -i 's/# CONFIG_PID_NS is not set/CONFIG_PID_NS=y/' out/.config
           sed -i 's/# CONFIG_IPC_NS is not set/CONFIG_IPC_NS=y/' out/.config
           sed -i 's/# CONFIG_SYSVIPC is not set/CONFIG_SYSVIPC=y/' out/.config
           sed -i 's/# CONFIG_POSIX_MQUEUE is not set/CONFIG_POSIX_MQUEUE=y/' out/.config
           sed -i 's/# CONFIG_DEVTMPFS is not set/CONFIG_DEVTMPFS=y/' out/.config
           sed -i 's/# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set/CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y/' out/.config
-          # Disable proprietary drivers that cause linker errors
           sed -i 's/CONFIG_CNSS2=y/# CONFIG_CNSS2 is not set/' out/.config
           sed -i 's/CONFIG_ICNSS2=y/# CONFIG_ICNSS2 is not set/' out/.config
           sed -i 's/CONFIG_QTI_BATTERY_CHARGER=y/# CONFIG_QTI_BATTERY_CHARGER is not set/' out/.config
@@ -139,7 +92,6 @@ jobs:
           sed -i 's/CONFIG_LEDS_QTI_FLASH=y/# CONFIG_LEDS_QTI_FLASH is not set/' out/.config
           sed -i 's/CONFIG_MI_HARDWARE_ID=m/# CONFIG_MI_HARDWARE_ID is not set/' out/.config
           sed -i 's/CONFIG_MI_DISP=y/# CONFIG_MI_DISP is not set/' out/.config
-          # Verify DroidSpaces configs
           echo "=== DroidSpaces configs ==="
           grep -E "PID_NS=|IPC_NS=|SYSVIPC=|POSIX_MQUEUE=|DEVTMPFS=" out/.config | grep -v "^#"
 
